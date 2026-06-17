@@ -1,43 +1,71 @@
-use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow};
+use gtk4::{
+    Application,
+    gio::prelude::{ApplicationExt, ApplicationExtManual},
+};
+use runtime::{
+    application::loader::ApplicationLoader,
+    config::RuntimeConfig,
+    core::error::{RuntimeError, RuntimeResult},
+    emergency::emergency_mode,
+    window::shell_host::ShellHost,
+};
+use std::{path::Path, process};
 
-use webkit6::WebView;
-use webkit6::prelude::WebViewExt;
+pub struct Runtime {
+    pub config: RuntimeConfig,
+}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Self {
+            config: RuntimeConfig::load(),
+        }
+    }
+}
 
 fn main() {
+    let runtime = Runtime::new();
+
     let app = Application::builder()
-        .application_id("in.p8labs.os.runtime")
+        .application_id("com.p8os.runtime")
         .build();
 
-    app.connect_activate(build_ui);
+    app.connect_activate(move |app| {
+        if let Err(err) = boot(&runtime.config, app) {
+            emergency_mode(&runtime.config, &err);
+        }
+    });
 
     app.run();
 }
 
-fn build_ui(app: &Application) {
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("P8OS Runtime")
-        .default_width(1280)
-        .default_height(720)
-        .build();
+fn boot(config: &RuntimeConfig, application: &Application) -> RuntimeResult<()> {
+    let pid = process::id();
 
-    let webview = WebView::new();
+    println!("booting...");
 
-    webview.load_html(
-        r#"
-        <!DOCTYPE html>
-        <html>
-        <body>
-            <h1>P8OS Runtime</h1>
-            <p>Hello from WebKitGTK.</p>
-        </body>
-        </html>
-        "#,
-        None,
-    );
+    if pid == 1 {
+        println!("Running as PID 1");
+        // TODO: mount filesystems
+        // TODO: initialize runtime services
+    } else {
+        println!("Running in development mode");
+    }
 
-    window.set_child(Some(&webview));
+    let loader = ApplicationLoader::new(config)?;
 
-    window.present();
+    let shell = loader
+        .find_app_by_id("os.shell.app")
+        .ok_or_else(|| RuntimeError::Boot("System shell (os.shell.app) not found".into()))?;
+
+    if !Path::new(&shell.entry).exists() {
+        return Err(RuntimeError::Boot(format!(
+            "Shell entrypoint not found: {}",
+            shell.entry.to_string_lossy()
+        )));
+    }
+
+    ShellHost::launch(application, &shell.entry)?;
+
+    Ok(())
 }
