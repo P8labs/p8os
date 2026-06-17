@@ -1,0 +1,10 @@
+{
+    "id": "os.shell.app",
+    "name": "Shell",
+    "entry": "index.html",
+    "permissions": [
+        "storage.read",
+        "storage.write",
+        "window.open"
+    ]
+}
